@@ -16,7 +16,7 @@ options.symmetry = true;
 % Another option is the adjoint method: options.method = 'adjoint'
 % default to APF
 options.method = 'APF';
-% Speed up the APF gradient computation by matrix division (Sec.2.2 of the inverse design paper)
+% Speed up the APF gradient computation by matrix division (Sec.2 of the inverse design paper)
 % Dividing one large APF computation into N_sub small APF computations, and
 % combine their results together
 % If N_sub = 1, no matrix division
@@ -148,7 +148,7 @@ syst.PML.direction = 'x';     % Only place PML in the x direction
      T_target(ind_target(ii)+[-1,1], ii) = 1/2;
  end
 
- % Function handles of the figure of merit (FoM) [Eq.(6) of the inverse
+ % Function handles of the figure of merit (FoM) [Eq.(5) of the inverse
  % design paper], \partial f/\partial pk and \partial f/\partial T in
  % Eq.(1) of the inverse design paper
  other_derivatives.FOM = @(x) sum(reshape((abs(x).^2 - T_target).^2, [], 1));
