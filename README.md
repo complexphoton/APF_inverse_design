@@ -14,3 +14,5 @@ To take fully advantage of the APF method and efficienctly perform optimizations
 * Install [MESTI.m](https://github.com/complexphoton/MESTI.m/tree/main) [download it and add the `MESTI.m/src` folder to the search path using the `addpath` command in MATLAB], the serial version of [MUMPS](http://mumps-solver.org/index.php?page=home) and its MATLAB interface.
 * Install [NLopt](http://github.com/stevengj/nlopt) to use various well-developed algorithms for optimizations. If `NLopt` is not installed, one can specify other methods in [`inverse_design_beam_splitter.m`](inverse_design_codes/inverse_design_beam_splitter.m).
 * Run [`inverse_design_beam_splitter.m`](inverse_design_codes/inverse_design_beam_splitter.m) [one can customise the optimization using `options`; check the documentation of this file for more details].
+
+The corresponding paper will be on arXiv within the next few days.
