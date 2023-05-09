@@ -176,9 +176,9 @@ syst.epsilon = [epsilon_L*ones(ny_tot, nz_extra_left), ...
 % Compute the FoM and its gradient dfdpk
 if nargout > 1
     % Get dAdpk and do SVD analytically
-    % dAdpk = U_k*Sigma_k*V'_k
-    % Each column of U_k, V_k (ie, u_i, v_i) has only 1 nonzero element = 1
-    % diag(Sigma_k) = dAdpk at pixels specified by u_i and v_i
+    % dAdpk = U_k*Sigma_k*U_k.'
+    % Each column of U_k (ie, u_i) has only 1 nonzero element = 1
+    % diag(Sigma_k) = dAdpk at pixels specified by u_i
     Sigma = zeros(num_pixel_change, 1);
     ind_interface_list = zeros(num_pixel_change, 2);
     n_sigma = 0;
@@ -276,7 +276,7 @@ if nargout > 1
 
     % Use APF method to compute the FoM and its gradient
     if strcmpi(options.method, 'APF')    
-        % Compute the gradient using APF method with matrix division, see Sec.2.2 of the
+        % Compute the gradient using APF method with matrix division, see Sec.2 of the
         % inverse design paper for more details
         N_sub = options.N_sub;
         n_mod = mod(num_pixel_change, N_sub);
@@ -284,12 +284,12 @@ if nargout > 1
         num_col_U = floor(num_pixel_change/N_sub)*ones(N_sub, 1) + [ones(n_mod, 1); zeros(N_sub-n_mod, 1)];
     
         CAU = zeros(N_R, num_pixel_change);    % C*inv(A)*U
-        VAB = zeros(num_pixel_change, N_L);     % V'*inv(A)*B
+        VAB = zeros(num_pixel_change, N_L);     % U.'*inv(A)*B
     
         for nnn = 1:N_sub  
             num_col_U_sub = num_col_U(nnn);
     
-            % Build input-profile B_tilde = [B, U_nnn]
+            % Build input-profile B_tilde = [B, U_(nnn)]
             B_struct_tilde = struct('pos', cell(1,3), 'data', cell(1,3));
     
             % Input plane waves
@@ -298,7 +298,7 @@ if nargout > 1
             B_struct_tilde(1).data = B_L;
             B_struct_tilde(2).data = B_R;
     
-            % Build the block of sparse matrix U_nnn
+            % Build the block of sparse matrix U_(nnn)
             ind_sub_interface = zeros(num_col_U_sub,1);
             for ii = 1:num_col_U_sub
                 if nnn > 1
@@ -308,8 +308,8 @@ if nargout > 1
                 end
             end
     
-            % Add U_nnn to B_tilde
-            % Note that the block of U_nnn starts from the x pixel at the front surface of metalens,
+            % Add U_(nnn) to B_tilde
+            % Note that the block of U_(nnn) starts from the x pixel at the front surface of metalens,
             % which is different from the plane wave sources, located at one pixel before the front surface. 
             % The block of U_nnn has ny*nz rows and about num_pixel_change/N_sub columns
             % Each column only has one nonzero element = 1
@@ -319,13 +319,13 @@ if nargout > 1
             C = 'transpose(B)';         % Specify C = transpose(B)
             D = [];                           % We only need the transmission matrix, for which D=0
     
-            % Calculate C*inv(A)*B, C*inv(A)*U, and V'*inv(A)*B
+            % Calculate C*inv(A)*B, C*inv(A)*U, and U.'*inv(A)*B
             % Prefactors will be multiplied later.
             S_all = mesti(syst, B_struct_tilde, C, D);
     
-            % Extract C*inv(A)*B, C*inv(A)*U, and V'*inv(A)*B
+            % Extract C*inv(A)*B, C*inv(A)*U, and U.'*inv(A)*B
             CAU_sub = S_all(M:-1:(N_L+1), (M+1):end);   % Extract and reorder C*inv(A)*U
-            VAB_sub = S_all((M+1):end, 1:N_L);                % Extract V'*inv(A)*B
+            VAB_sub = S_all((M+1):end, 1:N_L);                % Extract U.'*inv(A)*B
             if nnn ==1
                 T_FOV = S_all(M:-1:(N_L+1), 1:N_L);                                          % Extract and reorder C*inv(A)*B
                 T_FOV = (-2i)*reshape(sqrt_nu_R, [], 1).*T_FOV.*sqrt_nu_L;       % Multiply corresponding prefactors
@@ -348,12 +348,12 @@ if nargout > 1
         dfdpk = zeros(1,num_edge_change);
         if options.symmetry    % Symmetric metasurface              
             for kk = 1:num_edge_change
-               dTdpk = -CAU(:,(kk-1)*2*nz+(1:2*nz))*diag(Sigma((kk-1)*2*nz+(1:2*nz)))*VAB((kk-1)*2*nz+(1:2*nz),:); % Eq.(4) of the inverse design paper
+               dTdpk = -CAU(:,(kk-1)*2*nz+(1:2*nz))*diag(Sigma((kk-1)*2*nz+(1:2*nz)))*VAB((kk-1)*2*nz+(1:2*nz),:); % Eq.(3) of the inverse design paper
                dfdpk(kk) = pfppk + sum(reshape(2*real(dfdT.*dTdpk), [], 1)); % Eq.(1) of the inverse design paper
             end
         else   % General metasurface    
             for kk = 1:num_edge_change
-              dTdpk = -CAU(:,(kk-1)*nz+(1:nz))*diag(Sigma((kk-1)*nz+(1:nz)))*VAB((kk-1)*nz+(1:nz),:); % Eq.(4) of the inverse design paper
+              dTdpk = -CAU(:,(kk-1)*nz+(1:nz))*diag(Sigma((kk-1)*nz+(1:nz)))*VAB((kk-1)*nz+(1:nz),:); % Eq.(3) of the inverse design paper
               dfdpk(kk) = pfppk + sum(reshape(2*real(dfdT.*dTdpk), [], 1)); % Eq.(1) of the inverse design paper
             end
         end
@@ -381,7 +381,7 @@ if nargout > 1
         opts_adjoint.nrhs = 1;
         opts_adjoint.clear_BC = true;
 
-        % Calculate C*inv(A)*B, C*inv(A)*C.', V'*inv(A)*B and V'*inv(A)*C.'
+        % Calculate C*inv(A)*B, C*inv(A)*C.', U.'*inv(A)*B and U.'*inv(A)*C.'
         % Prefactors will be multiplied later.
         S_all = mesti(syst, B_struct_tilde, C_struct_tilde, D, opts_adjoint);
                     
@@ -401,12 +401,12 @@ if nargout > 1
         dfdpk = zeros(1,num_edge_change);
         if options.symmetry    % Symmetric metasurface              
             for kk = 1:num_edge_change
-               dTdpk = -(VAC((kk-1)*2*nz+(1:2*nz),:)).'*diag(Sigma((kk-1)*2*nz+(1:2*nz)))*VAB((kk-1)*2*nz+(1:2*nz),:); % Eq.(4) of the inverse design paper
+               dTdpk = -(VAC((kk-1)*2*nz+(1:2*nz),:)).'*diag(Sigma((kk-1)*2*nz+(1:2*nz)))*VAB((kk-1)*2*nz+(1:2*nz),:); % Eq.(3) of the inverse design paper
                dfdpk(kk) = pfppk + sum(reshape(2*real(dfdT.*dTdpk), [], 1)); % Eq.(1) of the inverse design paper
             end
         else   % General metasurface    
             for kk = 1:num_edge_change
-              dTdpk = -(VAC((kk-1)*nz+(1:nz),:)).'*diag(Sigma((kk-1)*nz+(1:nz)))*VAB((kk-1)*nz+(1:nz),:); % Eq.(4) of the inverse design paper
+              dTdpk = -(VAC((kk-1)*nz+(1:nz),:)).'*diag(Sigma((kk-1)*nz+(1:nz)))*VAB((kk-1)*nz+(1:nz),:); % Eq.(3) of the inverse design paper
               dfdpk(kk) = pfppk + sum(reshape(2*real(dfdT.*dTdpk), [], 1)); % Eq.(1) of the inverse design paper
             end
         end
