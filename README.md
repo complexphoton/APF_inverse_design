@@ -15,4 +15,8 @@ To take fully advantage of the APF method and efficienctly perform optimizations
 * Install [NLopt](http://github.com/stevengj/nlopt) to use various well-developed algorithms for optimizations. If `NLopt` is not installed, one can specify other methods in [`inverse_design_beam_splitter.m`](inverse_design_codes/inverse_design_beam_splitter.m).
 * Run [`inverse_design_beam_splitter.m`](inverse_design_codes/inverse_design_beam_splitter.m) [one can customise the optimization using `options`; check the documentation of this file for more details].
 
+An animation on the evolution of the design is shown below
+
+<img align="center" src="https://github.com/complexphoton/APF_inverse_design/blob/main/inverse_design_codes/animated_opt.gif" width=50% height=50%>
+
 The corresponding paper will be on arXiv within the next few days.
