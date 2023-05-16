@@ -17,6 +17,6 @@ To take fully advantage of the APF method and efficienctly perform optimizations
 
 An animation on the evolution of the metasurface and its transmission matrix is shown below.
 
-
+<img align="center" src="https://github.com/complexphoton/APF_inverse_design/blob/main/inverse_design_codes/animated_opt.gif" width=60% height=60%>
 
 The corresponding paper will be on arXiv within the next few days.
