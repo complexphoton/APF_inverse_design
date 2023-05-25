@@ -2,25 +2,65 @@
 
 % Consider an infinite-sized, periodic metasurface with N = 80 meta-atoms
 % each period.
-% Periodic boundary condition in the y direction, perfectly matched layers
-% (PMLs) in the z direction.
+% Periodic boundary condition on the y direction, perfectly matched layers
+% (PMLs) on the z direction.
 
 %% Prepare for the inverse design
 
 % Set the seed of random number generator to generate different initial guesses for reproducibility
 rand_seed = 1;
 
-% Whether the metasurface is symmetric with respect to its central plane (default to false)
+% Whether the metasurface is symmetric with respect to its central plane (defaults to false)
 options.symmetry = true;
 % Use APF method for the objective-plus-gradient computation
-% Another option is the adjoint method: options.method = 'adjoint'
-% default to APF
+% Another option is the conventional adjoint method: options.method = 'adjoint'
+% defaults to APF
 options.method = 'APF';
-% Speed up the APF gradient computation by matrix division (Sec.2 of the inverse design paper)
-% Dividing one large APF computation into N_sub small APF computations, and
+% Speed up the APF gradient computation by matrix division (see the inverse design paper for more details)
+% Dividing one large APF computation into N_sub sub-APF computations, and
 % combine their results together
 % If N_sub = 1, no matrix division
 options.N_sub = 3;
+% Whether to compress the inputs and outputs to reduce the number of
+% nonzero elements, and thus reduce the computing time and memory usage of
+% APF when nnz(B) > nnz(A)
+options.compress = false;
+% Parameters for input/output matrix compression if enabled
+if options.compress
+    % The compression procedure is described in supplementary Sec. 5 of the APF paper:
+    % 1. Optionally pad extra channels to the input/output.
+    % 2. Optionally scale the channels with weights q.
+    % 3. Fourier transform the input/output matrices so they become spatially localized.
+    % 4. Truncate the transformed input/output matrices within a window size.
+    % These parameters should be chosen based on the desired level of accuracy;
+    % see Supplementary Fig 10 of the APF paper.
+
+    % Whether or not to use the Hann window function for the scaling weight q
+    % Set use_Hann_window = false to skip scaling.
+    % As shown in Supplementary Fig 10, using the Hann window generally reduces
+    % the compression error significantly.
+    options.compress_par.use_Hann_window = true;
+
+    % pad_ratio = (number of channels to compute)/(number of extra channels to pad)
+    % Set pad_ratio = 0 to skip padding.
+    % When Hann window is used, it is important to also pad extra channels;
+    % otherwise the compression error may go up instead of down.
+    % But too much padding can increase computing time and memory usage if
+    % nnz(B) or numel(S) grows larger than nnz(A). A padding_ratio of 0.5 is
+    % a reasonable choice.
+    options.compress_par.pad_ratio_L = 0.5;
+    options.compress_par.pad_ratio_R = 0.5;
+
+    % trunc_width_over_lambda = (truncation window width)/wavelength
+    % Larger truncation window gives lower compression error but increases
+    % nnz(B). The peak width of the Fourier-transformed input/output matrices is
+    % inversely proportional to the momentum space range spanned by the
+    % input/output plane waves (counting both the target channels and the padded
+    % channels), so if fewer input/output channels are considered, a larger
+    % truncation width should be used. A window of 10*lambda is a reasonable choice.
+    options.compress_par.trunc_width_over_lambda_L = 10;
+    options.compress_par.trunc_width_over_lambda_R = 10;
+end
 
 % Whether or not to use the open-source package NLopt:
 % https://github.com/stevengj/nlopt to do the optimization
@@ -42,7 +82,7 @@ FOV = 60;                       % Angular bandwidth of the metasurface in the ai
 
 % Thickness of the metasurface [micron],
 % which is chosen to provide 2pi phase shift with high transmission by
-% changing the width of each ridge [see Supplementary Fig.S3 of the inverse design paper].
+% changing the width of each ridge [see Supplementary Fig.S2 of the inverse design paper].
 h  = 0.56;   
 
 % Store refractive indices and use them in the function FOM_AND_GRAD
@@ -52,7 +92,8 @@ sim_info.RI.n_ridge = n_aSi;
 
 n_meta_atom = 80;         % Number of meta atoms
 % Approximate width of the metasurface [micron]
-% As shown in Supplementary Fig.S3, the periodicity of each unit cell is about 0.3*wavelength.
+% As shown in Supplementary Fig.S2 of the inverse design paper, 
+% the periodicity of each unit cell is about 0.3*wavelength.
 % Note that we use the periodicity of unit cell to estimate the width of
 % the metasurface, but we don't limit the metasurface to conventional unit-cell-based designs.
 W  = ceil(n_meta_atom*wavelength*0.3/2)*2;          
@@ -68,8 +109,6 @@ nz_extra_right = nz_extra_left;
 % Periodic BC on the y direction
 ny_extra_low = 0;
 ny_extra_high = ny_extra_low;
-% Number of pixels for the whole system with PMLs
-ny_tot = ny + ny_extra_low + ny_extra_high;
 % Store pixel numbers and use them in the function FOM_AND_GRAD
 sim_info.num_pixel.nz = nz;
 sim_info.num_pixel.ny = ny;
@@ -91,32 +130,51 @@ channels_L = mesti_build_channels(ny, 'TM', BC, k0dx, epsilon_L, [], use_continu
 channels_R = mesti_build_channels(ny, 'TM', BC, k0dx, epsilon_R, [], use_continuous_dispersion);
 
 % We use all propagating plane-wave channels on the right
-N_R = channels_R.N_prop;    % Number of channels on the right
+M_R = channels_R.N_prop;    % Number of channels on the right
 
 % For the incident plane waves, we only take channels within the desired incident angular range:
 % |ky| < n_air*k0*sin(FOV/2)
 kydx_bound = n_air*k0dx*sind(FOV/2);
 ind_kydx_FOV = find(abs(channels_L.kydx_prop) < kydx_bound);
-N_L = numel(ind_kydx_FOV);                                    % Number of channels on the left
+M_L = numel(ind_kydx_FOV);                                    % Number of channels we use on the left
 kydx_FOV = channels_L.kydx_prop(ind_kydx_FOV);  % kydx within the angular bandwidth of interest
 
-M = N_L + N_R;   % Get the total number of input (output) channels coming from both two sides of the metasurface
+% Build the input matrix on the left and right surfaces.
+if options.compress
+    % Half the number of extra channels to pad
+    % There is no point in having more channels than the number of spatial pixels
+    M_L_pad_half = min([floor(ny-M_L)/2, round(M_L*options.compress_par.pad_ratio_L/2)]);
+    M_R_pad_half = min([floor(ny-M_R)/2, round(M_R*options.compress_par.pad_ratio_R/2)]);
 
-% Note that even though we only need the transmission matrix with input
-% from the left, here we also include input channels from the right (same
-% as the output channels of interest). This allows us to make matrix K =
-% [A,B;C,0] symmetric.
-B_L = channels_L.fun_u(kydx_FOV);                        % Build the input matrix on the left surface
-B_R = channels_R.fun_u(channels_R.kydx_prop);    % Build the input matrix on the right surface
+    % Total number of channels, including extra padded channels
+    N_L = M_L + 2*M_L_pad_half;
+    N_R = M_R + 2*M_R_pad_half;
+
+    % Truncation window size
+    ny_window_L = min([ny, 1 + round(options.compress_par.trunc_width_over_lambda_L*wavelength/dx)]);
+    ny_window_R = min([ny, 1 + round(options.compress_par.trunc_width_over_lambda_R*wavelength/dx)]);
+    
+    % Build the compressed input matrix on the left and right surfaces.
+    B_L = build_compressed_B(ny, N_L, ny_window_L, options.compress_par.use_Hann_window);
+    B_R = build_compressed_B(ny, N_R, ny_window_R, options.compress_par.use_Hann_window);
+else
+    % Total number of channels
+    N_L = M_L;
+    N_R = M_R;
+
+    % Build the input matrix on the left and right surfaces.
+    B_L = channels_L.fun_u(kydx_FOV); 
+    B_R = channels_R.fun_u(channels_R.kydx_prop);
+end
 
 % In mesti(), B_struct.pos = [m1, n1, h, w] specifies the position of a
 % block source, where (m1, n1) is the index of the smaller-(y,x) corner,
 % and (h, w) is the height and width of the block. Here, we put line
 % sources (w=1) on the left surface (n1=n_L) and the right surface
-% (n1=n_R) with height ny centered around the metalens.
-n_L = nz_extra_left;               % x pixel immediately before the metalens
-n_R = n_L + nz + 1;               % x pixel immediately after the metalens
-m1_L = ny_extra_low +1;      % first y pixel of the metalens
+% (n1=n_R) with height ny centered around the metasurface.
+n_L = nz_extra_left;               % x pixel immediately before the metasurface
+n_R = n_L + nz + 1;               % x pixel immediately after the metasurface
+m1_L = ny_extra_low +1;      % first y pixel of the metasurface
 m1_R = m1_L;                        % first y pixel of the output projection window
 
 % Store information of channels and use them in the function FOM_AND_GRAD
@@ -126,6 +184,10 @@ channels.L.pos =  [m1_L, n_L, ny, 1];
 channels.R.B_R = B_R;
 channels.R.N_R = N_R;
 channels.R.pos =  [m1_R, n_R, ny, 1];
+if options.compress
+    channels.L.M_L = M_L;
+    channels.R.M_R = M_R;
+end
 % The flux-normalization prefactor sqrt(nu) on the left/right
 channels.sqrt_nu_L = channels_L.sqrt_nu_prop(ind_kydx_FOV);
 channels.sqrt_nu_R = channels_R.sqrt_nu_prop;
@@ -138,14 +200,24 @@ syst.yBC = 'periodic';          % Periodic BC in the y direction
 syst.PML.npixels = nPML;   % Number of PML pixels
 syst.PML.direction = 'x';     % Only place PML in the x direction
 
+clear B_L B_R;
+
 %% Inverse design of a metasurface beam splitter
 
  % Build the target transmission matrix,
  % with T_nm = 0.5 at the plus and minus 1 diffraction orders and T_nm = 0 otherwise. 
- T_target = zeros(N_R, N_L);
- ind_target= round(interp1(channels_R.kydx_prop, 1:N_R, kydx_FOV, 'linear', 'extrap'));
- for ii = 1:N_L
-     T_target(ind_target(ii)+[-1,1], ii) = 1/2;
+ T_target = zeros(M_R, M_L);
+ ind_target= round(interp1(channels_R.kydx_prop, 1:M_R, kydx_FOV, 'linear', 'extrap'));
+ if M_R > M_L
+     for ii = 1:M_L
+         T_target(ind_target(ii)+[-1,1], ii) = 1/2;
+     end
+ else   % consider the whole transmission matrix with M_R = M_L
+     T_target(2,1) = 1/2;
+     T_target(M_R-1,M_L) = 1/2;
+     for ii = 2:(M_L-1)
+         T_target(ind_target(ii)+[-1,1], ii) = 1/2;
+     end
  end
 
  % Function handles of the figure of merit (FoM) [Eq.(5) of the inverse
@@ -167,7 +239,7 @@ if options.symmetry
     
     y_high = 0 - min_feature/2;        % Upper bound of edge positions [micron]
     extra_space = W/2 - min_feature - min_feature*(num_edge_change-1);
-% General metasurface without mirror symmetry with respect to its central plane
+% General metasurface without mirror symmetry
 else   
     % For general metasurfaces, we parameterize the two edge positions of all
     % n_meta_atom ridges of the metasurface,
@@ -187,7 +259,7 @@ ftol_abs = 1e-4;          % Optimization stops when |f(P_{n+1})-f(P_n)| < ftol_a
 
 % Choose the optimization method
 if using_NLopt
-    % To use Nlopt, we first need to add its path to Matlab.
+    % To use Nlopt, one first needs to add its path to Matlab.
     % See more details on the website: https://github.com/stevengj/nlopt
     
     % Choose the local gradient-based algorithm: SLSQP (index: 40) or MMA (index:24), supporting inequality constraints
@@ -242,7 +314,7 @@ else
     else  % Use the fmincon function in Matlab to do the optimization
         FoM_and_grad_fmincon = @(y_edge_list) FoM_and_grad(y_edge_list, h, syst, sim_info, channels, other_derivatives, options);
 
-        % Fabrication constraints: y_{k+1} - y_k = dy >= min_feature
+        % Fabrication constraints: y_{k+1} - y_k >= min_feature
         A_con = diag(ones(num_edge_change,1), 0) + diag(-1*ones(num_edge_change-1,1), 1);
         b_con = [-min_feature*ones(num_edge_change-1,1); 0];
 
