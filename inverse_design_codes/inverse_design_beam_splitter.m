@@ -91,12 +91,12 @@ sim_info.RI.n_sub = n_silica;
 sim_info.RI.n_ridge = n_aSi;
 
 n_meta_atom = 80;         % Number of meta atoms
-% Approximate width of the metasurface [micron]
-% As shown in Supplementary Fig.S2 of the inverse design paper, 
-% the periodicity of each unit cell is about 0.3*wavelength.
+% Width of the metasurface [micron]
+% Periodicity = 0.3 micron is chosen for meta-atoms to provide 2pi phase shift with high
+% transmission according to Supplementary Fig.S2 of the inverse design paper.  
 % Note that we use the periodicity of unit cell to estimate the width of
 % the metasurface, but we don't limit the metasurface to conventional unit-cell-based designs.
-W  = ceil(n_meta_atom*wavelength*0.3/2)*2;          
+W  = n_meta_atom*0.3;          
 
 ny = ceil(W/dx);      % Number of pixels of the metasurface in the y direction
 dx = W/ny;             % Update dx to fit W into integer number of pixels 
