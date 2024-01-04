@@ -19,4 +19,4 @@ An animation on the evolution of the metasurface and its transmission matrix is 
 
 <img align="center" src="https://github.com/complexphoton/APF_inverse_design/blob/main/inverse_design_codes/animated_opt.gif" width=60% height=60%>
 
-See [arXiv:2306.09257](https://arxiv.org/abs/2306.09257) for the corresponding manuscript.
+See the corresponding paper [Fast Multichannel Inverse Design through Augmented Partial Factorization](https://pubs.acs.org/doi/10.1021/acsphotonics.3c00911) for more details.
