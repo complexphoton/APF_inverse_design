@@ -24,6 +24,10 @@ function [epsilon_pos, interface_ind] = build_epsilon_pos(dx, n_bg, n_ridge, y_r
 %       interface_ind(ii,1) corresponds to the y index of left edge of the ii-th ridge
 %       interface_ind(ii,2) corresponds to the y index of right edge of the ii-th ridge
 
+if mod(length(y_ridge), 2)
+    error('Total number of edges must be even.');
+end
+
 nz = ceil(ridge_height/dx);                 % Number of pixels in the z direction (ie. along the height of ridges)
 num_ridge = length(y_ridge)/2;          % Number of ridges
 
@@ -63,7 +67,7 @@ for ii = 1:num_ridge
         ind_ridge = zeros(2,1);   % Save the indices of the first and last pixels filled with ridge material for each ridge
     
         % The left edge: Ratio of the background & ridge along the y direction
-        if ceil(ind_edge(1)) - ind_edge(1) < 0.5
+        if ceil(ind_edge(1)) - ind_edge(1) <= 0.5
             ind_ridge(1) = ceil(ind_edge(1))+1;
             pixel_ridge_ratio_y1 = ceil(ind_edge(1)) - ind_edge(1) + 0.5;
             pixel_bg_ratio_y1 = 1 - pixel_ridge_ratio_y1;
@@ -86,7 +90,7 @@ for ii = 1:num_ridge
         end
 
         % The right edge: Ratio of the background & ridge along the y direction
-         if ind_edge(2) - floor(ind_edge(2)) < 0.5
+         if ind_edge(2) - floor(ind_edge(2)) <= 0.5
             ind_ridge(2) = floor(ind_edge(2)) - 1;
             pixel_ridge_ratio_y2 = ind_edge(2) - floor(ind_edge(2)) + 0.5;
             pixel_bg_ratio_y2 = 1 - pixel_ridge_ratio_y2;
